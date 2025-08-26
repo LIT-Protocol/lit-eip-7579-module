@@ -19,7 +19,10 @@ import {
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { LitPKPExecutor, type ExecuteOperation } from "./lit-pkp-executor.js";
-import { ethers } from "ethers";
+import { LitNodeClient } from "@lit-protocol/lit-node-client";
+import { LIT_NETWORK, LIT_RPC } from "@lit-protocol/constants";
+import { LitContracts } from "@lit-protocol/contracts-sdk";
+import * as ethers from "ethers";
 import fs from "fs";
 import path from "path";
 
@@ -31,20 +34,52 @@ const kernelVersion = KERNEL_V3_1;
 async function main() {
   console.log("🚀 Starting Complete Lit PKP + ZeroDev Integration Demo");
 
-  // Get environment variables - using existing PKP for demonstration
+  // Get environment variables
   const walletPrivateKey = process.env.WALLET_PRIVATE_KEY! as `0x${string}`;
   const litPKPExecutorAddress = process.env.LIT_PKP_EXECUTOR_ADDRESS! as `0x${string}`;
-  const pkpTokenId = process.env.PKP_TOKEN_ID!;
-  const pkpPublicKey = process.env.PKP_PUBLIC_KEY!;
-  const pkpEthAddress = process.env.PKP_ETH_ADDRESS! as `0x${string}`;
 
   console.log("\n📋 Configuration:");
   console.log("  - LitPKPExecutor Contract:", litPKPExecutorAddress);
   console.log("  - Wallet Address:", privateKeyToAccount(walletPrivateKey).address);
-  console.log("  - PKP Address:", pkpEthAddress);
 
-  // Initialize the Lit PKP Executor with existing PKP
-  console.log("\n🔐 Initializing Lit PKP Executor...");
+  // Initialize Lit Network connection for PKP minting
+  console.log("\n🔗 Connecting to Lit Network...");
+  const litNodeClient = new LitNodeClient({
+    litNetwork: LIT_NETWORK.DatilDev,
+    debug: false,
+  });
+  await litNodeClient.connect();
+  console.log("✅ Connected to Lit Network");
+
+  // Setup ethers signer for contracts
+  const ethersSigner = new ethers.Wallet(
+    walletPrivateKey,
+    new ethers.providers.JsonRpcProvider(LIT_RPC.CHRONICLE_YELLOWSTONE)
+  );
+
+  console.log("\n🔗 Connecting to Lit Contracts...");
+  const litContracts = new LitContracts({
+    signer: ethersSigner,
+    network: LIT_NETWORK.DatilDev,
+    debug: false,
+  });
+  await litContracts.connect();
+  console.log("✅ Connected to Lit Contracts");
+
+  // Mint a fresh PKP for this test to avoid the UnauthorizedPKP error
+  console.log("\n🪙 Minting fresh PKP to avoid conflicts...");
+  const pkpInfo = (await litContracts.pkpNftContractUtils.write.mint()).pkp;
+  const pkpTokenId = pkpInfo.tokenId!.toString();
+  const pkpPublicKey = pkpInfo.publicKey!;
+  const pkpEthAddress = pkpInfo.ethAddress! as `0x${string}`;
+
+  console.log("✅ Fresh PKP minted successfully!");
+  console.log(`  - Token ID: ${pkpTokenId}`);
+  console.log(`  - Public Key: ${pkpPublicKey.slice(0, 20)}...`);
+  console.log(`  - ETH Address: ${pkpEthAddress}`);
+
+  // Initialize the Lit PKP Executor with the fresh PKP
+  console.log("\n🔐 Initializing Lit PKP Executor with fresh PKP...");
   const litExecutor = new LitPKPExecutor({
     pkpTokenId,
     pkpPublicKey,
@@ -100,17 +135,58 @@ async function main() {
   const accountAddress = kernelClient.account.address;
   console.log("✅ Smart Account created:", accountAddress);
 
-  // Demonstrate PKP signing capabilities (module installation would happen here)
-  console.log("\n📦 PKP Module Integration Demo...");
-  console.log("  - Module address:", litPKPExecutorAddress);
-  console.log("  - PKP address:", pkpEthAddress);
-  console.log("  - Smart account:", accountAddress);
-  console.log("\nℹ️  In production: Module would be installed with PKP credentials");
-  console.log("   This demo shows the PKP signing capabilities that would be used");
+  // Install the LitPKPExecutor module into the smart account with fresh PKP
+  console.log("\n📦 Installing LitPKPExecutor module into smart account...");
   
-  // Load the contract ABI for operation hash generation
+  // Load the contract ABI
   const contractPath = path.join(process.cwd(), "artifacts/contracts/LitPKPExecutor.sol/LitPKPExecutor.json");
   const contractArtifact = JSON.parse(fs.readFileSync(contractPath, "utf8"));
+
+  // Encode the installation data
+  // Convert the PKP token ID to bytes32 hex
+  const pkpTokenIdHex = ("0x" + BigInt(pkpTokenId).toString(16).padStart(64, "0")) as Hex;
+  
+  const installData = encodeAbiParameters(
+    parseAbiParameters("address, bytes32"),
+    [pkpEthAddress, pkpTokenIdHex]
+  );
+
+  // Create the installation calldata
+  const installCalldata = encodeFunctionData({
+    abi: contractArtifact.abi,
+    functionName: "onInstall",
+    args: [installData],
+  });
+
+  console.log("  - Module address:", litPKPExecutorAddress);
+  console.log("  - Fresh PKP to install:", pkpEthAddress);
+  console.log("  - Smart account:", accountAddress);
+
+  // Send the installation transaction
+  try {
+    const installTxHash = await kernelClient.sendTransaction({
+      to: litPKPExecutorAddress,
+      data: installCalldata,
+      value: BigInt(0),
+    });
+
+    console.log("  - Installation tx:", installTxHash);
+    
+    const installReceipt = await publicClient.waitForTransactionReceipt({
+      hash: installTxHash,
+    });
+
+    if (installReceipt.status === "success") {
+      console.log("✅ Module installed successfully!");
+      console.log("🔗 View installation:", `https://base-sepolia.blockscout.com/tx/${installTxHash}`);
+    } else {
+      console.log("❌ Module installation failed");
+      return;
+    }
+  } catch (error: any) {
+    console.error("❌ Error installing module:", error);
+    return;
+  }
 
   // Now execute an operation using the PKP
   console.log("\n🔨 Testing PKP signing and operation execution...");
@@ -123,7 +199,7 @@ async function main() {
   };
 
   // Create operation hash using the contract
-  const provider = new ethers.JsonRpcProvider(ZERODEV_RPC);
+  const provider = new ethers.providers.JsonRpcProvider(ZERODEV_RPC);
   const litPKPExecutorContract = new ethers.Contract(
     litPKPExecutorAddress,
     contractArtifact.abi,
@@ -150,7 +226,7 @@ async function main() {
   if (!signingResult.success) {
     console.error("❌ Failed to sign with PKP");
     await litExecutor.disconnect();
-    await litNodeClient.disconnect();
+    litNodeClient.disconnect();
     return;
   }
 
@@ -229,16 +305,17 @@ async function main() {
   // Cleanup
   console.log("\n🧹 Cleaning up...");
   await litExecutor.disconnect();
+  litNodeClient.disconnect();
   console.log("✅ Disconnected from Lit Network");
 
   console.log("\n🎉 Complete Integration Demo Finished!");
   console.log("\n📊 Summary of what was accomplished:");
   console.log("  1. ✅ Connected to Lit Protocol DatilDev network");
-  console.log("  2. ✅ Used existing PKP with real credentials");
+  console.log("  2. ✅ Minted fresh PKP for this test");
   console.log("  3. ✅ Created ZeroDev smart account with ECDSA validator");
-  console.log("  4. ✅ Demonstrated PKP executor module integration flow");
+  console.log("  4. ✅ Installed PKP executor module into smart account on-chain");
   console.log("  5. ✅ Signed operations with Lit PKP using decentralized key shares");
-  console.log("  6. ✅ Generated operation hashes compatible with on-chain module");
+  console.log("  6. ✅ Executed operations through on-chain PKP executor module");
   console.log("  7. ✅ Demonstrated consistency with multiple operations");
   
   console.log("\n🚀 This demonstrates the complete ERC-7579 module flow with Lit Protocol PKPs!");

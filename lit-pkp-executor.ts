@@ -9,7 +9,7 @@ import {
   Hex
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { ethers } from "ethers";
+import * as ethers from "ethers";
 
 export interface LitPKPExecutorConfig {
   pkpTokenId: string;
@@ -50,7 +50,7 @@ export class LitPKPExecutor {
     // Create ethers signer for Lit contracts
     this.ethersSigner = new ethers.Wallet(
       config.walletPrivateKey,
-      new ethers.JsonRpcProvider(LIT_RPC.CHRONICLE_YELLOWSTONE)
+      new ethers.providers.JsonRpcProvider(LIT_RPC.CHRONICLE_YELLOWSTONE)
     );
   }
 
