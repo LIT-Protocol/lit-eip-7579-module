@@ -16,6 +16,7 @@
     "@lit-protocol/auth-helpers": "^7.3.0",
     "@lit-protocol/constants": "^7.3.0",
     "@lit-protocol/contracts-sdk": "^7.3.0",
+    "@lit-protocol/lit-auth-client": "^7.3.0",
     "@lit-protocol/lit-node-client": "^7.3.0",
     "@lit-protocol/uint8arrays": "^7.3.0",
     "@zerodev/ecdsa-validator": "^5.4.9",

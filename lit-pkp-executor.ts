@@ -1,9 +1,7 @@
 import { LitNodeClient } from "@lit-protocol/lit-node-client";
-import { LIT_NETWORK, LIT_ABILITY } from "@lit-protocol/constants";
-import { 
-  createSiweMessageWithRecaps, 
-  generateAuthSig,
-} from "@lit-protocol/auth-helpers";
+import { LIT_NETWORK, LIT_ABILITY, LIT_RPC } from "@lit-protocol/constants";
+import { LitPKPResource } from "@lit-protocol/auth-helpers";
+import { EthWalletProvider } from "@lit-protocol/lit-auth-client";
 import { LitContracts } from "@lit-protocol/contracts-sdk";
 import { 
   Hash,
@@ -50,7 +48,10 @@ export class LitPKPExecutor {
     this.walletAccount = privateKeyToAccount(config.walletPrivateKey);
     
     // Create ethers signer for Lit contracts
-    this.ethersSigner = new ethers.Wallet(config.walletPrivateKey);
+    this.ethersSigner = new ethers.Wallet(
+      config.walletPrivateKey,
+      new ethers.JsonRpcProvider(LIT_RPC.CHRONICLE_YELLOWSTONE)
+    );
   }
 
   async connect(): Promise<void> {
@@ -144,20 +145,29 @@ export class LitPKPExecutor {
       console.log("  - UserOp Hash:", userOpHash);
       console.log("  - PKP Public Key:", this.pkpPublicKey.slice(0, 20) + "...");
 
-      // Create session signatures for PKP signing
-      console.log("🔑 Creating session signatures...");
-      
-      // Get auth signature for the wallet that owns the PKP
-      const authSig = await generateAuthSig({
-        signer: this.walletAccount,
-        toSign: `I am creating a session to use PKP ${this.pkpPublicKey}`,
+      // Create auth method using EthWalletProvider
+      console.log("🔑 Creating auth method...");
+      const authMethod = await EthWalletProvider.authenticate({
+        signer: this.ethersSigner,
+        litNodeClient: this.litNodeClient,
       });
+      console.log("✅ Auth method created");
 
-      // For demonstration, we'll use a simplified session approach
-      // In production, you'd properly configure the session signatures
-      const sessionSigs: any = authSig;
-
-      console.log("✅ Session signatures created successfully");
+      // Get PKP session signatures
+      console.log("🔑 Getting PKP session signatures...");
+      const pkpSessionSigs = await this.litNodeClient.getPkpSessionSigs({
+        pkpPublicKey: this.pkpPublicKey,
+        chain: "ethereum",
+        authMethods: [authMethod],
+        resourceAbilityRequests: [
+          {
+            resource: new LitPKPResource("*"),
+            ability: LIT_ABILITY.PKPSigning,
+          },
+        ],
+        expiration: new Date(Date.now() + 1000 * 60 * 10).toISOString(), // 10 minutes
+      });
+      console.log("✅ PKP session signatures created");
 
       // Prepare the message to sign (the operation hash)
       const toSign = userOpHash.startsWith('0x') ? userOpHash.slice(2) : userOpHash;
@@ -165,10 +175,10 @@ export class LitPKPExecutor {
 
       console.log("🔏 Calling Lit PKP sign...");
       
-      // Use the pkpSign function as provided
+      // Use the pkpSign function with proper session sigs
       const signingResult = await this.litNodeClient.pkpSign({
         pubKey: this.pkpPublicKey,
-        sessionSigs,
+        sessionSigs: pkpSessionSigs,
         toSign: toSignArray,
       });
 
