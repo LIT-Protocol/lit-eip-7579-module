@@ -169,8 +169,21 @@ export class LitPKPExecutor {
       });
       console.log("✅ PKP session signatures created");
 
-      // Prepare the message to sign (the operation hash)
-      const toSign = userOpHash.startsWith('0x') ? userOpHash.slice(2) : userOpHash;
+      // Prepare the message to sign - apply Ethereum message prefix like the contract expects
+      // Contract does: keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", operationHash))
+      const operationHashBytes = userOpHash.startsWith('0x') ? userOpHash : `0x${userOpHash}`;
+      const ethSignedMessageHash = ethers.utils.keccak256(
+        ethers.utils.solidityPack(
+          ["string", "bytes32"],
+          ["\x19Ethereum Signed Message:\n32", operationHashBytes]
+        )
+      );
+      
+      console.log("  - Original operation hash:", userOpHash);
+      console.log("  - Prefixed message hash:", ethSignedMessageHash);
+      
+      // Convert to byte array for PKP signing
+      const toSign = ethSignedMessageHash.startsWith('0x') ? ethSignedMessageHash.slice(2) : ethSignedMessageHash;
       const toSignArray = Array.from(new Uint8Array(Buffer.from(toSign, 'hex')));
 
       console.log("🔏 Calling Lit PKP sign...");
