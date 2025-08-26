@@ -1,0 +1,93 @@
+Proposal
+Use Lit Actions + PKPs to create an 7579 executor module that can be controlled by any validator on a given chain.
+Requirements
+1. Version and Date: 
+Version: 1.0 
+Date: August 25, 2025
+
+2. Overview:
+This PRD outlines the integration of Lit Protocol’s Lit Actions and Lit Keys (PKPs) into an ERC-7579-compliant modular smart contract wallet as a sub-key executor module. The core innovation allows Lit keys to function as an executor, validated via existing wallet validators, enabling cross-chain asset ownership without deploying the full smart contract wallet on every chain. Once the wallet is deployed on a base chain, the Lit sub-key can manage assets on additional chains through programmable signing, leveraging Lit’s decentralized key management and JavaScript-based logic for secure, conditional execution.
+
+ERC-7579 provides standardized interfaces for modular accounts, including validators (for signature/userOp validation) and executors (for executing operations). Lit Actions are immutable JavaScript programs that define signing and auth logic for Programmable Key Pairs (PKPs), while Lit Signers enable decentralized, threshold-based signing. This integration positions Lit as a Type 2 (Executor) module under ERC-7579, with validation routed through installed Type 1 (Validator) modules.
+
+
+3. Objectives:
+Enable seamless cross-chain operations: Deploy wallet on one chain (e.g., Ethereum mainnet) and use Lit sub-key for asset control on others (e.g., Polygon, Optimism) without per-chain deployment.
+Enhance modularity: Treat Lit Action key as a sub-key executor, compatible with any arbitrary ERC-7579 validator (e.g., ECDSA, multisig).
+Improve security and flexibility: Use Lit’s programmable signing to enforce custom logic (e.g., conditions for execution) while maintaining decentralization.
+Reduce gas/deployment costs: Leverage counterfactual deployment on secondary chains via Lit-signed UserOperations (compatible with ERC-4337).
+Ensure interoperability: Adhere to ERC-7579 standards for module installation/uninstallation and ERC-4337 for account abstraction.
+
+4. Scope:
+
+In Scope:
+Development of a Lit Executor Module implementing IERC7579Module (Type ID: 2).
+Integration with Lit SDK for PKP management, Lit Actions scripting, and signing orchestration.
+Validation flow: Executor actions triggered only after validation by installed validators.
+Cross-chain support: Lit sub-key signs transactions/UserOps for undeployed chains, assuming compatible AA infrastructure (e.g., bundlers like Pimlico).
+Basic testing: Unit tests for installation, execution, and cross-chain simulation.
+
+Out of Scope:
+Full wallet implementation (assume existing ERC-7579 wallet like Safe or custom).
+Advanced Lit features (e.g., encryption/decryption beyond signing).
+UI/UX for wallet apps (focus on backend/protocol layer).
+Security audits (recommend post-MVP).
+
+
+5. Functional Requirements:
+
+Module Installation: Implement `installModule(2, litExecutorAddress, initData)`: `initData` includes Lit PKP address, Lit Action IPFS CID, and initial conditions (e.g., authorized chains).
+Call Lit SDK to mint/assign PKP if needed and deploy Lit Action script.
+Emit `ModuleInstalled` event.
+Support `uninstallModule` to revoke PKP access and clean up.
+Query `isModuleInstalled` to check Lit executor status.
+
+Executor Functionality:
+Lit Action key acts as sub-key: Programmable JS logic defines execution rules (e.g., “sign only if validator approves and target chain is whitelisted”).
+
+Execution flow:
+User initiates action (e.g., via UserOp).
+Arbitrary validator (e.g., installed ECDSA module) validates signature/userOp.
+If valid, route to Lit executor: Use Lit Signer to generate signature shares, combine via threshold cryptography, and execute (e.g., transfer assets).
+Cross-chain: For undeployed chains, Lit sub-key signs as owner for counterfactual accounts, relaying via bundlers/paymasters.
+
+Validation Integration:
+Executor defers to any installed validator: No direct validation in executor; assume pre-validation in account’s `validateUserOp` or `isValidSignature`.
+Support hybrid: Lit can optionally act as a secondary validator if installed as Type 1 module.
+
+Cross-Chain Asset Ownership:
+Base chain deployment: Wallet fully deployed with Lit module.
+Secondary chains: Lit PKP owns/controls assets directly or via minimal proxy, signing ops without wallet deployment.
+Ensure chain-agnostic: Lit Actions handle chainID checks to prevent replay attacks.
+
+
+6. Non-Functional Requirements:
+Security: Use Lit’s MPC for key shares; enforce ERC-1271 for signatures. Mitigate risks like action malleability.
+Performance: Target <10s for Lit signing; optimize for gas (leverage ERC-4337 batching).
+Compatibility: ERC-7579 v1+, Lit SDK v2+, EVM-compatible chains with AA support.
+Scalability: Handle up to 10 chains per wallet; Lit nodes for decentralized availability.
+Error Handling: Revert on invalid validation, PKP mismatch, or Action execution failure.
+
+
+7. Assumptions and Dependencies:
+
+Assumptions: Users have Lit PKPs; chains support ERC-4337/AA. No native cross-chain execution (rely on bridges/bundlers if needed).
+
+Dependencies:
+ERC-7579 reference implementation.
+Lit Protocol SDK for Actions/Signers.
+ERC-4337 infrastructure (e.g., Alchemy Account Kit, Pimlico bundlers).
+Testing: Foundry/Hardhat for simulations.
+
+
+8. Risks and Mitigations:
+
+Risk: Cross-chain signature replay – Mitigate with nonce/chainID in Lit Actions.
+Risk: Lit node centralization – Use fully decentralized Lit network.
+Risk: Standard evolution – Monitor updates to ERC-7579/Lit.
+
+
+9. Next Steps:
+Prototype development: Implement Lit executor module.
+Integration testing: Simulate cross-chain scenarios.
+Review and iterate based on feedback.
