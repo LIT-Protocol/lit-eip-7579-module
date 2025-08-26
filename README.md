@@ -292,10 +292,11 @@ MIT License - see LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
+- **Gemini Wallet Team**: For writing the original proposal and defining the vision
 - **Lit Protocol Team**: For the innovative PKP and threshold cryptography
 - **ZeroDev Team**: For ERC-7579 implementation and account abstraction tools
 - **ERC-7579 Authors**: For the modular account standard
-- **Vincent Team**: For the original proposal and vision
+- **Vincent Team**: For the implementation and technical execution
 
 ---
 
